@@ -1,23 +1,9 @@
-$global:uniquePackages = [ordered]@{}
+param(
+    [string]$Solution = 'C:\Project\WindowsSoftware\DeviceExplorer\latest\DeviceExplorer.sln', [string]$Output = '.'
+)
 
-function MergeHashTables {
-    param (
-        $table1, $table2
-    )
 
-    #!!!!!!!!!!! Changing the order of tables changes the result !!!!!!!!!!!!!!!
-    # Remove duplicate keys in hashtables, otherwise a merge is not possible
-    foreach ($key in $table1.Keys) {
-        if ($table2.Contains($key)) {
-            $table2.Remove($key)
-        }
-    }
-
-    # merging all entries in on table
-    $table2 = $table2 + $table1
-
-    return $table2
-}
+$global:uniquePackages = [ordered]@{ }
 
 function GetLicenses {
     param (
@@ -33,7 +19,8 @@ function GetLicenses {
         $nuspecFile = "$env:USERPROFILE\.nuget\packages\$packageName\$packageVersion\$packageName.nuspec"        
 
         if (!(Test-Path $nuspecFile)) {
-            Write-Host "File not found: $nuspecFile"
+            # Should not happen, because missing packages are filtered already
+            Write-Host "Error: File not found: $nuspecFile"
             continue
         }
 
@@ -48,7 +35,8 @@ function GetLicenses {
             $hash.Add($data.Name, $data) 
         }
         catch {
-            Write-Host "GetLicenses: ignored duplicate package: $($data.Name, $data.Version)"
+            # Should not happen, because there shouldn't be any duplicate packages anymore at this stage
+            Write-Host "Error: ignored duplicate package: $($data.Name, $data.Version)"
         }
     }
 
@@ -59,13 +47,13 @@ function GetSubdependencies {
     param (
         $packageName, $packageVersion
     )
-    
-    $dependencies = [ordered]@{ }
+
     $packageName = $packageName.ToLower()
     $nuspecFile = "$env:USERPROFILE\.nuget\packages\$packageName\$packageVersion\$packageName.nuspec"        
 
     if (!(Test-Path $nuspecFile)) {
-        Write-Host "GETSUB: File not found: $nuspecFile"
+        Write-Host "File not found: $nuspecFile"
+        $global:uniquePackages.Remove($packageName)
         continue
     }
 
@@ -76,64 +64,40 @@ function GetSubdependencies {
             $dependency.Name = $_.id
             $dependency.Version = $_.version.Trim('[()]')
         
-            if (!$dependencies.Contains($dependency.Name)) {
-                $dependencies.Add($dependency.Name, $dependency.Version)
-            }
+            if (!$global:uniquePackages.Contains($dependency.Name)) {
+                $global:uniquePackages.Add($dependency.Name, $dependency.Version)
 
-            # try {
-            #     $dependencies.Add($dependency.Name, $dependency.Version)
-            # }
-            # catch {
-            #     Write-Host "GetSubdependencies: ignored duplicate package: $($dependency.Name, $dependency.Version)"
-            # }    
+                GetSubdependencies $dependency.Name $dependency.Version
+            } 
         }
     }
-
-    if ($dependencies.Count -gt 0) {
-        $keys = $dependencies.Keys
-
-        foreach ($key in $keys) {
-            $subDep = GetSubdependencies $key $dependencies[$key]
-
-            $dependencies = MergeHashTables $dependencies $subDep
-        }
-    }
-
-    return $dependencies
 }
 
 $expr = "dotnet list"
 $command = "package"
-$solution = "C:\Project\WindowsSoftware\DeviceExplorer\latest\DeviceExplorer.sln"
+$solutionPath = Resolve-Path $Solution
 
 # Get all packages form the Solution 
 $packages = [ordered]@{ }
-Invoke-Expression "$expr $solution $command" | 
+Invoke-Expression "$expr $solutionPath $command" | 
 Where-Object { $_ -match ">" } |
 ForEach-Object {
     $packageInfo = $_.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
     $Name = $packageInfo[1]
     $Version = $packageInfo[3].Trim('[()]')
 
-    try {
-        $packages.Add($Name, $Version)    
+    if (!$global:uniquePackages.Contains($Name)) {
+        $global:uniquePackages.Add($Name, $Version)
     }
-    catch {
-        Write-Host "ignored duplicate package: $($Name, $Version)"
-    }
-    
 }
 
-$dependencies = [ordered]@{ }
+$keys = @($global:uniquePackages.Keys)
 
-foreach ($pack in $packages.GetEnumerator()) {
-    $subDep = GetSubdependencies $pack.Name $pack.Value
-
-    $dependencies = MergeHashTables $dependencies $subDep
+foreach ($key in $keys) {
+    GetSubdependencies $key $global:uniquePackages[$key]
 }
 
-$packages = MergeHashTables $dependencies $packages 
-$packages = $packages.GetEnumerator() | Sort-Object -Property Name
+$packages = $global:uniquePackages.GetEnumerator() | Sort-Object -Property Name
 
 # get licenseUrls for all packages (and subpackages) in solution
 $licenses = (GetLicenses $packages)
