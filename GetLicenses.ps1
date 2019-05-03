@@ -1,13 +1,16 @@
 param(
-    [string]$Solution = "", [string]$Output = ""
+    [string]$Solution = ".", [string]$Output = ""
 )
 
-$uniquePackages = [ordered]@{ }
-$solutionPath = Resolve-Path $Solution
+if (!(Test-Path $Solution)) {
+    Write-Error "Invalid path: $Solution"
+    Exit
+}
 
-if (!(Test-Path $solutionPath)) {
-    Write-Error "Invalid Solution"
-    return
+$solutionPath = Resolve-Path $Solution  
+if (-Not [System.IO.Path]::GetExtension($solutionPath) -eq ".sln") {
+    Write-Error "Please provide the full path of the solution"
+    Exit
 }
 
 function GetLicenses {
@@ -46,7 +49,6 @@ function GetLicenses {
 
     return $hash
 }
-
 function GetSubdependencies {
     param (
         $packageName, $packageVersion
@@ -79,6 +81,8 @@ function GetSubdependencies {
 
 $expr = "dotnet list"
 $command = "package"
+$uniquePackages = [ordered]@{ }
+
 
 # Get all packages form the Solution 
 $packages = [ordered]@{ }
@@ -108,6 +112,9 @@ $licenses = (GetLicenses $packages)
 
 if ($Output -eq "") {
     $outputPath = [System.IO.Path]::GetDirectoryName($solutionPath)
+}
+else {
+    $outputPath = Resolve-Path $Output
 }
 
 # write licenses to file
