@@ -23,13 +23,12 @@ function GetLicenses {
     $hash = [ordered]@{ }
 
     foreach ($package in $packages.GetEnumerator()) {
-        $packageName = $package.key.ToLower()
-        $packageVersion = $package.value
+        $packageName = $package.Name.ToLower()
+        $packageVersion = $package.Version
         $nuspecFile = "$env:USERPROFILE\.nuget\packages\$packageName\$packageVersion\$packageName.nuspec"        
 
         if (!(Test-Path $nuspecFile)) {
-            # Should not happen, because missing packages are filtered already
-            Write-Host "Error: File not found: $nuspecFile"
+            Write-Host "Warning: File not found: $nuspecFile"
             continue
         }
 
@@ -45,7 +44,7 @@ function GetLicenses {
         }
         catch {
             # Should not happen, because there shouldn't be any duplicate packages anymore at this stage
-            Write-Host "Error: ignored duplicate package: $($data.Name, $data.Version)"
+            Write-Host "Info: ignored duplicate package: $($data.Name, $data.Version)"
         }
     }
 
@@ -61,7 +60,7 @@ function GetSubdependencies {
     $nuspecFile = "$env:USERPROFILE\.nuget\packages\$packageName\$packageVersion\$packageName.nuspec"        
 
     if (!(Test-Path $nuspecFile)) {
-        Write-Host "File not found and will be ignored: $nuspecFile"
+        Write-Host "Warning: File not found and will be ignored: $nuspecFile"
         $uniquePackages.Remove($packageName)
         continue
     }
@@ -73,9 +72,11 @@ function GetSubdependencies {
             $dependency.Name = $_.id
             $dependency.Version = $_.version.Trim('[()]')
         
+            $key = "$($dependency.Name):$($dependency.Version)"
+
             # Doesn't distinguish between same packages with different version numbers, the key should be a KeyValue with name and version
-            if (!$uniquePackages.Contains($dependency.GetHashCode())) {
-                $uniquePackages.Add($dependency.GetHashCode(), $dependency)
+            if (!$uniquePackages.Contains($key)) {
+                $uniquePackages.Add($key, $dependency)
                 GetSubdependencies $dependency.Name $dependency.Version
             } 
         }
@@ -87,21 +88,20 @@ $command = "package"
 $uniquePackages = [ordered]@{ }
 
 
-# Get all packages form the Solution 
+Write-Host "Getting all packages form $solutionPath" 
 $packages = [ordered]@{ }
 Invoke-Expression "$expr $solutionPath $command" | 
 Where-Object { $_ -match ">" } |
 ForEach-Object {
     $packageInfo = $_.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
-    # $Name = $packageInfo[1]
-    # $Version = $packageInfo[3].Trim('[()]')
-
     $dependency = "" | Select-Object "Name", "Version"
     $dependency.Name = $packageInfo[1]
     $dependency.Version = $packageInfo[3].Trim('[()]')
 
-    if (!$uniquePackages.Contains($dependency.GetHashCode())) {
-        $uniquePackages.Add($dependency.GetHashCode(), $dependency)
+    $key = "$($dependency.Name):$($dependency.Version)"
+
+    if (!$uniquePackages.Contains($key)) {
+        $uniquePackages.Add($key, $dependency)
     }
 }
 
@@ -111,19 +111,16 @@ $count = $uniquePackages.Count
 # copy the keys in an array, otherwise exception will be thrown during the iteration, because hashtable changes in the loop
 $keys = @($uniquePackages.Keys)
 
+Write-Host "Getting all subdependencies..." 
 foreach ($key in $keys) {
     $dependency = $uniquePackages[$key]
     GetSubdependencies $dependency.Name $dependency.Version
 }
 
-# Logging
-Write-Host "Direct dependencies found: $count"
-Write-Host "Subdependencies found: $($uniquePackages.Count - $count)"
-
 $packages = $uniquePackages.Values | Sort-Object -Property Name
 
 # get licenseUrls for all packages (and subpackages) in solution
-$licenses = (GetLicenses $packages)
+$licenses = (GetLicenses $packages) | Sort-Object -Property Name
 
 if ($Output -eq "") {
     $outputPath = [System.IO.Path]::GetDirectoryName($solutionPath)
@@ -134,6 +131,14 @@ else {
 
 # write licenses to file
 $licenses.values | Out-File -FilePath "$outputPath\ThirdPartyLicenses.txt"
+
+
+# Logging
+Write-Host "Direct dependencies found: $count"
+Write-Host "Subdependencies found: $($uniquePackages.Count - $count)"
+Write-Host "Licenses found: $($licenses.Count)"
+Write-Host "Write licenses to $outputPath\ThirdPartyLicenses.txt"
+Write-Host "Success"
 
 
 
