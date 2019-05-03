@@ -1,9 +1,14 @@
 param(
-    [string]$Solution = 'C:\Project\WindowsSoftware\DeviceExplorer\latest\DeviceExplorer.sln', [string]$Output = '.'
+    [string]$Solution = "", [string]$Output = ""
 )
 
+$uniquePackages = [ordered]@{ }
+$solutionPath = Resolve-Path $Solution
 
-$global:uniquePackages = [ordered]@{ }
+if (!(Test-Path $solutionPath)) {
+    Write-Error "Invalid Solution"
+    return
+}
 
 function GetLicenses {
     param (
@@ -15,7 +20,6 @@ function GetLicenses {
     foreach ($package in $packages.GetEnumerator()) {
         $packageName = $package.key.ToLower()
         $packageVersion = $package.value
-
         $nuspecFile = "$env:USERPROFILE\.nuget\packages\$packageName\$packageVersion\$packageName.nuspec"        
 
         if (!(Test-Path $nuspecFile)) {
@@ -53,7 +57,7 @@ function GetSubdependencies {
 
     if (!(Test-Path $nuspecFile)) {
         Write-Host "File not found: $nuspecFile"
-        $global:uniquePackages.Remove($packageName)
+        $uniquePackages.Remove($packageName)
         continue
     }
 
@@ -64,9 +68,9 @@ function GetSubdependencies {
             $dependency.Name = $_.id
             $dependency.Version = $_.version.Trim('[()]')
         
-            if (!$global:uniquePackages.Contains($dependency.Name)) {
-                $global:uniquePackages.Add($dependency.Name, $dependency.Version)
-
+            # Doesn't distinguish between same packages with different version numbers, the key should be a KeyValue with name and version
+            if (!$uniquePackages.Contains($dependency.Name)) {
+                $uniquePackages.Add($dependency.Name, $dependency.Version)
                 GetSubdependencies $dependency.Name $dependency.Version
             } 
         }
@@ -75,7 +79,6 @@ function GetSubdependencies {
 
 $expr = "dotnet list"
 $command = "package"
-$solutionPath = Resolve-Path $Solution
 
 # Get all packages form the Solution 
 $packages = [ordered]@{ }
@@ -86,24 +89,29 @@ ForEach-Object {
     $Name = $packageInfo[1]
     $Version = $packageInfo[3].Trim('[()]')
 
-    if (!$global:uniquePackages.Contains($Name)) {
-        $global:uniquePackages.Add($Name, $Version)
+    if (!$uniquePackages.Contains($Name)) {
+        $uniquePackages.Add($Name, $Version)
     }
 }
 
-$keys = @($global:uniquePackages.Keys)
+# copy the keys in an array, otherwise exception will be thrown during the iteration, because hashtable changes in the loop
+$keys = @($uniquePackages.Keys)
 
 foreach ($key in $keys) {
-    GetSubdependencies $key $global:uniquePackages[$key]
+    GetSubdependencies $key $uniquePackages[$key]
 }
 
-$packages = $global:uniquePackages.GetEnumerator() | Sort-Object -Property Name
+$packages = $uniquePackages.GetEnumerator() | Sort-Object -Property Name
 
 # get licenseUrls for all packages (and subpackages) in solution
 $licenses = (GetLicenses $packages)
 
+if ($Output -eq "") {
+    $outputPath = [System.IO.Path]::GetDirectoryName($solutionPath)
+}
+
 # write licenses to file
-$licenses.values | Out-File -FilePath "ThirdPartyLicenses.txt"
+$licenses.values | Out-File -FilePath "$outputPath\ThirdPartyLicenses.txt"
 
 
 
