@@ -1,5 +1,5 @@
 # NugetLicensesReader
-Reads all LicensUrls from every dependency and subdependency of a solution
+Reads all License urls from every dependency and subdependency of a solution
 
 ## Requirements
 It is necessary to install *dotnet cli* globaly before running this script, because the direct dependencies are read with the `dotnet list <sln> package` command. 
