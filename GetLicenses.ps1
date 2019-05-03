@@ -71,7 +71,6 @@ function GetSubdependencies {
             $dependency = "" | Select-Object "Name", "Version"
             $dependency.Name = $_.id
             $dependency.Version = $_.version.Trim('[()]')
-        
             $key = "$($dependency.Name):$($dependency.Version)"
 
             # Doesn't distinguish between same packages with different version numbers, the key should be a KeyValue with name and version
