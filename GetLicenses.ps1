@@ -34,13 +34,15 @@ function GetLicenses {
 
         [xml]$nuspec = Get-Content $nuspecFile
 
-        $data = "" | Select-Object "Name", "Version", "LicenseUrl"
+        $data = "" | Select-Object "Name", "Version", "projectUrl", "LicenseUrl"
         $data.Name = $nuspec.package.metadata.id
         $data.Version = $nuspec.package.metadata.version
+        $data.projectUrl = $nuspec.package.metadata.projectUrl
         $data.LicenseUrl = $nuspec.package.metadata.licenseUrl
     
         try {
-            $hash.Add($data.Name, $data) 
+            # $hash.Add($data.Name, $data) 
+            $hash.Add($data, 0) 
         }
         catch {
             # Should not happen, because there shouldn't be any duplicate packages anymore at this stage
@@ -129,7 +131,7 @@ else {
 }
 
 # write licenses to file
-$licenses.values | Out-File -FilePath "$outputPath\ThirdPartyLicenses.txt"
+$licenses.keys | Out-File -FilePath "$outputPath\ThirdPartyLicenses.txt"
 
 
 # Logging
