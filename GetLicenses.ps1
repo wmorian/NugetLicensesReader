@@ -37,8 +37,8 @@ function GetLicenses {
         $data = "" | Select-Object "Name", "Version", "projectUrl", "LicenseUrl"
         $data.Name = $nuspec.package.metadata.id
         $data.Version = $nuspec.package.metadata.version
-        $data.projectUrl = $nuspec.package.metadata.projectUrl
-        $data.LicenseUrl = $nuspec.package.metadata.licenseUrl
+        $data.projectUrl = if ($null -eq $nuspec.package.metadata.projectUrl) { "-" } else { $nuspec.package.metadata.projectUrl }
+        $data.LicenseUrl = if ($null -eq $nuspec.package.metadata.licenseUrl) { "-" } else { $nuspec.package.metadata.licenseUrl }
     
         try {
             # $hash.Add($data.Name, $data) 
@@ -46,7 +46,7 @@ function GetLicenses {
         }
         catch {
             # Should not happen, because there shouldn't be any duplicate packages anymore at this stage
-            Write-Host "Info: ignored duplicate package: $($data.Name, $data.Version)"
+            Write-Host "Error: ignored duplicate package: $($data.Name, $data.Version)"
         }
     }
 
